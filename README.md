@@ -1,213 +1,109 @@
-# KimiProxy
+# 🚀 KimiProxy
 
-Proxy API local compatível com OpenAI que roteia requisições para os modelos do **Kimi (kimi.com)** via automação de navegador com Playwright. Oferece suporte a execução de ferramentas, modo de pensamento (reasoning) e persistência de sessão.
+Proxy API local compatível com **OpenAI** que roteia requisições para os modelos do **Kimi (kimi.ai)** via automação de navegador com Playwright. Tenha o poder do Kimi (incluindo modelos de raciocínio) em qualquer ferramenta que aceite o SDK da OpenAI.
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)](https://www.typescriptlang.org/)
-[![Hono](https://img.shields.io/badge/Hono-4.0-green)](https://hono.dev/)
-[![Playwright](https://img.shields.io/badge/Playwright-1.59-blueviolet)](https://playwright.dev/)
-[![License: ISC](https://img.shields.io/badge/License-ISC-yellow.svg)](LICENSE)
-
----
-
-## ✨ Features
-
-- **OpenAI API Compatible**: Interface compatível com `/v1/chat/completions` e `/v1/models`.
-- **Reasoning Support**: Suporte completo ao modo de pensamento (thinking) dos modelos Kimi.
-- **Tool Execution**: Sistema de execução de ferramentas locais integrado ao fluxo do chat.
-- **Session Persistence**: Login persistente com armazenamento de perfil do navegador em `kimi_profile/`.
-- **Network Visibility**: Exibe URLs local e de rede (IP) ao iniciar o servidor.
-- **Browser Selection**: Escolha entre Chrome, Firefox, Edge ou Chromium para execução.
-- **Docker Ready**: Deploy simplificado com suporte a Docker e Docker Compose.
+[![GitHub license](https://img.shields.io/github/license/riqueandrade/kimiproxy?style=flat-square)](https://github.com/riqueandrade/kimiproxy/blob/main/LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=flat-square)](https://www.typescriptlang.org/)
+[![Hono](https://img.shields.io/badge/Hono-4.0-green?style=flat-square)](https://hono.dev/)
+[![Playwright](https://img.shields.io/badge/Playwright-1.59-blueviolet?style=flat-square)](https://playwright.dev/)
 
 ---
 
-## 🏗️ Arquitetura
+## ✨ Destaques
 
-```mermaid
-graph TD
-    Client[Cliente OpenAI/SDK] -->|HTTP| Proxy[KimiProxy]
-    Proxy -->|/v1/chat/completions| Handler[Chat Handler]
-    Handler --> Kimi[kimi.com]
-    Handler --> Playwright[Playwright Service]
-    Playwright --> Browser[Browser Instance]
-    Handler --> Tools[Tools Executor]
-    Tools --> Registry[Tool Registry]
-    
-    subgraph "Configuração"
-        Env[.env] --> Proxy
-        Profile[kimi_profile/] --> Playwright
-    end
-```
+- 🧠 **Suporte a Reasoning**: Use modelos como `k2d6-thinking` com blocos de pensamento nativos.
+- 🛠️ **Execução de Ferramentas**: Sistema de *Function Calling* integrado via Prompt Engineering.
+- 🔄 **Auto-Continue**: Detecta automaticamente quando o Kimi pausa respostas longas e continua sozinho.
+- 📂 **Sessão Persistente**: Login via navegador com persistência de cookies em `kimi_profile/`.
+- 🌐 **Visibilidade de Rede**: Exibe URLs de acesso local e na rede Wi-Fi/LAN.
+- 🎨 **Interface Terminal Pro**: Logs coloridos, spinners e banners informativos.
+- 🐳 **Docker Ready**: Suporte para execução em containers.
+
+---
+
+## 🏗️ Como Funciona?
+
+O KimiProxy atua como uma ponte. Ele recebe uma chamada de API padrão da OpenAI, abre uma instância silenciosa (headless) do seu navegador para autenticar e extrair os headers necessários do Kimi, e então realiza a comunicação direta com a API gRPC do Kimi para garantir a máxima velocidade de streaming.
 
 ---
 
 ## 📋 Pré-requisitos
 
-| Dependência | Versão Mínima | Instalação |
-|------------|--------------|-----------|
-| Node.js | v20.x | [nvm](https://github.com/nvm-sh/nvm) |
-| npm | v9.x | Incluído com Node.js |
-| Playwright | - | `npx playwright install` |
-| Docker (opcional) | v24.x | [Docker Docs](https://docs.docker.com/get-docker/) |
+- **Node.js**: v20.x ou superior
+- **Navegador**: Chrome, Brave, Edge ou Firefox instalado (ou use os binários do Playwright)
 
 ---
 
-## 🚀 Instalação
+## 🚀 Instalação e Setup
 
-### Via npm
+1. **Clonar e Instalar:**
+   ```bash
+   git clone https://github.com/riqueandrade/kimiproxy.git
+   cd kimiproxy
+   npm install
+   ```
 
-```bash
-# Clonar repositório
-git clone https://github.com/riqueandrade/kimiproxy.git
-cd kimiproxy
+2. **Configuração (.env):**
+   Crie um arquivo `.env` na raiz:
+   ```env
+   PORT=3000
+   API_KEY=sk-sua-chave-aqui
+   BROWSER=chrome
+   # Opcional: Aponte para o executável do seu Brave/Chrome/Edge
+   # EXECUTABLE_PATH=C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe
+   ```
 
-# Instalar dependências
-npm install
-
-# Instalar browsers do Playwright
-npx playwright install
-```
-
-### Via Docker
-
-```bash
-# Iniciar containers
-docker-compose up -d
-```
-
----
-
-## ⚙️ Configuração
-
-Crie o arquivo `.env` na raiz do projeto:
-
-```env
-# Porta do servidor (default: 3000)
-PORT=3000
-
-# Chave de API para proteger os endpoints (opcional)
-API_KEY=sua-chave-secreta-aqui
-
-# Navegador padrão (chromium, firefox, chrome, edge)
-BROWSER=chromium
-```
+3. **Login (Obrigatório uma única vez):**
+   Execute o comando abaixo. Ele abrirá uma janela do navegador:
+   ```bash
+   npm run login
+   ```
+   - Faça login na sua conta no site do Kimi.
+   - Assim que vir a tela de chat, **feche a janela do navegador**.
+   - Sua sessão estará salva em `kimi_profile/`.
 
 ---
 
-## 📡 Uso e Comandos
+## 📡 Uso
 
-### Inicialização do Servidor
-
+**Iniciar o Servidor:**
 ```bash
-# Iniciar com o navegador padrão (Chromium)
 npm start
-
-# Iniciar com navegadores específicos
-npm run start:chrome
-npm run start:firefox
-npm run start:edge
 ```
 
-Ao iniciar, o console exibirá:
-```txt
-🚀 KimiProxy started!
-- Local:   http://localhost:3000
-- Network: http://192.168.1.10:3000
-
-Available Routes:
-- [GET] /health
-- [POST] /v1/chat/completions
-- [GET] /v1/models
-```
-
-### Autenticação de Sessão (Login)
-
-Realize o login interativo direto no terminal (totalmente invisível e rodando em segundo plano):
-```bash
-npm run login
-# Ou com browser específico
-npm run login:firefox
-```
-
-Ao executar, o script solicitará de forma interativa no console o seu número de telefone (com DDI e DDD, ex: `5582987185879`) e, em seguida, o código de 6 dígitos recebido via SMS. O fluxo é inteiramente processado de forma silenciosa em segundo plano (headless), injetando o Token de Acesso diretamente na sessão e armazenando os cookies de sessão de forma segura na pasta `kimi_profile/`.
-
----
-
-## 📡 API Reference
-
-### Chat Completions
-
-```http
-POST /v1/chat/completions
-Content-Type: application/json
-Authorization: Bearer sua-chave
-```
-
-**Modelos Suportados**:
-- `k2d6-thinking`: Modelo com raciocínio (thinking) habilitado.
-- `k2d6`: Modelo padrão sem o bloco de pensamento.
-
----
-
-## 💻 Exemplos de Integração
-
-### OpenAI SDK (Node.js)
-
+**Exemplo de integração com OpenAI SDK:**
 ```typescript
 import OpenAI from 'openai';
 
 const openai = new OpenAI({
   baseURL: 'http://localhost:3000/v1',
-  apiKey: process.env.API_KEY || 'sk-no-key-required'
+  apiKey: 'sk-sua-chave-aqui'
 });
 
-const completion = await openai.chat.completions.create({
+const response = await openai.chat.completions.create({
   model: 'k2d6-thinking',
-  messages: [{ role: 'user', content: 'Explique como funciona o Playwright.' }]
+  messages: [{ role: 'user', content: 'Qual a raiz quadrada de 144?' }],
+  stream: true
 });
-
-console.log(completion.choices[0].message.content);
 ```
 
 ---
 
-## 📁 Estrutura do Projeto
+## 🛠️ Comandos Disponíveis
 
-```
-kimiproxy/
-├── src/
-│   ├── index.ts              # Entry point e servidor Hono
-│   ├── routes/
-│   │   └── chat.ts          # Handler compatível com OpenAI
-│   ├── services/
-│   │   ├── kimi.ts          # Integração com a API do Kimi
-│   │   └── playwright.ts    # Automação de navegador
-│   ├── tools/
-│   │   ├── executor.ts      # Execução de ferramentas
-│   │   └── registry.ts      # Registro de tools
-│   └── login.ts             # Script de autenticação
-├── kimi_profile/            # Armazenamento da sessão (gitignored)
-├── Dockerfile                # Configuração Docker
-└── package.json             # Scripts e dependências
-```
-
----
-
-## 🔍 Troubleshooting
-
-- **Endereço em uso**: Verifique se a porta `3000` está livre ou altere o `PORT` no `.env`.
-- **Erro de Navegador**: Se um navegador não abrir, certifique-se de que ele está instalado (`npx playwright install`).
-- **Sessão Expirada**: Execute `npm run login` novamente para renovar os cookies.
+| Comando | Descrição |
+|---------|-----------|
+| `npm start` | Inicia o proxy usando o navegador configurado no `.env`. |
+| `npm run login` | Abre o navegador para autenticação manual. |
+| `npm test` | Executa a suíte de testes (18 testes integrados). |
+| `npm run start:firefox` | Força a execução usando o Firefox. |
 
 ---
 
 ## ⚠️ Disclaimer
 
-> Este projeto é fornecido estritamente para fins educacionais e de pesquisa.
+Este projeto é destinado estritamente para fins **educacionais e de pesquisa**. 
+- Não incentive ou use para violação dos Termos de Serviço da plataforma Kimi.
+- Não utilize para automação em larga escala não autorizada.
 
-Os autores não incentivam ou endossam:
-- Violação dos Termos de Serviço da plataforma Kimi.
-- Automação não autorizada em larga escala.
-- Uso para atividades maliciosas.
-
-**Use por sua conta e risco.**
+**Desenvolvido por Henrique de Andrade Reynaud.**

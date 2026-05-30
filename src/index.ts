@@ -10,6 +10,7 @@
 
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import { logger } from 'hono/logger';
 import { cors } from 'hono/cors';
 import { bearerAuth } from 'hono/bearer-auth';
 import { chatCompletions } from './routes/chat.ts';
@@ -17,12 +18,17 @@ import { fetchKimiModels } from './services/kimi.ts';
 import * as dotenv from 'dotenv';
 import { initPlaywright, BrowserType } from './services/playwright.ts';
 import { networkInterfaces } from 'os';
+import pc from 'picocolors';
+import boxen from 'boxen';
+import ora from 'ora';
+import figlet from 'figlet';
 
 dotenv.config();
 
 export const app = new Hono();
 
 app.use('*', cors());
+app.use('*', logger());
 
 // Helper to get local network IPs
 function getNetworkAddress() {
@@ -35,6 +41,19 @@ function getNetworkAddress() {
     }
   }
   return null;
+}
+
+function showBanner() {
+  console.log(
+    pc.cyan(
+      figlet.textSync('KimiProxy', {
+        font: 'Standard',
+        horizontalLayout: 'default',
+        verticalLayout: 'default',
+      })
+    )
+  );
+  console.log(pc.dim(` v1.0.0 | OpenAI-Compatible Proxy for Kimi.ai\n`));
 }
 
 // API Key protection middleware
@@ -68,6 +87,8 @@ app.get('/v1/models', async (c) => {
 import { fileURLToPath } from 'url';
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  showBanner();
+
   // Parse browser type from args or env
   let browserType: BrowserType = 'chromium';
   const browserArg = process.argv.find(arg => arg.startsWith('--browser='));
@@ -77,21 +98,43 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     browserType = process.env.BROWSER as BrowserType;
   }
 
+  const spinner = ora({
+    text: `Launching ${pc.bold(pc.yellow(browserType))}...`,
+    color: 'cyan'
+  }).start();
+
   initPlaywright(true, browserType).then(() => {
-    console.log(`Playwright initialized (${browserType}).`);
-    const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+    spinner.succeed(`Playwright initialized (${pc.green(browserType)}).`);
     
+    const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
     const networkIP = getNetworkAddress();
     
-    console.log('\n🚀 KimiProxy started!');
-    console.log(`- Local:   http://localhost:${port}`);
-    if (networkIP) {
-      console.log(`- Network: http://${networkIP}:${port}`);
-    }
+    const localUrl = `http://localhost:${pc.bold(port)}`;
+    const networkUrl = networkIP ? `http://${networkIP}:${pc.bold(port)}` : 'Not available';
 
-    console.log('\nAvailable Routes:');
+    const serverInfo = [
+      `${pc.bold('Server Status:')} ${pc.green('Running')}`,
+      `${pc.bold('Local:')}         ${pc.cyan(localUrl)}`,
+      `${pc.bold('Network:')}       ${pc.cyan(networkUrl)}`,
+      `${pc.bold('Auth:')}          ${process.env.API_KEY ? pc.green('Enabled') : pc.yellow('Disabled')}`
+    ].join('\n');
+
+    console.log('\n' + boxen(serverInfo, {
+      padding: 1,
+      margin: 0,
+      borderStyle: 'round',
+      borderColor: 'cyan',
+      title: 'KimiProxy Info',
+      titleAlignment: 'center'
+    }));
+
+    console.log(`\n${pc.bold('Available Routes:')}`);
     app.routes.forEach(route => {
-      console.log(`- [${route.method}] ${route.path}`);
+      const methodColor = 
+        route.method === 'GET' ? pc.green : 
+        route.method === 'POST' ? pc.blue : pc.gray;
+      
+      console.log(`${pc.dim('-')} [${methodColor(route.method.padEnd(4))}] ${pc.white(route.path)}`);
     });
     console.log('');
 
@@ -100,7 +143,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       port
     });
   }).catch((err: any) => {
-    console.error('Failed to initialize playwright:', err);
+    spinner.fail(pc.red('Failed to initialize playwright:'));
+    console.error(err);
     process.exit(1);
   });
 }

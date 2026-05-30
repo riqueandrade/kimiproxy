@@ -281,6 +281,7 @@ async function _getKimiHeadersInternal(forceNew = false): Promise<{ headers: Rec
         'button[type="submit"]',
         'button.send-button',
         '.chat-input-send-button',
+        'button:has(svg.send-icon)',
         'svg.send-icon',
         'button:has(svg)'
       ];
@@ -292,23 +293,26 @@ async function _getKimiHeadersInternal(forceNew = false): Promise<{ headers: Rec
           if (btn && await btn.isVisible()) {
             console.log(`[Playwright] Attempting click on: ${selector}`);
             
-            // Try both DOM click and Playwright click
-            await activePage!.evaluate((sel) => {
-              const element = document.querySelector(sel) as HTMLElement;
-              if (element) {
-                element.focus();
-                element.click();
-              }
-            }, selector);
+            // Try Playwright click first as it's more robust with elements like SVG
+            await btn.click({ force: true, timeout: 2000 }).catch(() => {});
             
-            // Also try a real mouse click just in case
-            await btn.click({ force: true, delay: 50 }).catch(() => {});
+            // Fallback to DOM click if needed, with safety check
+            await activePage!.evaluate((sel) => {
+              const element = document.querySelector(sel) as any;
+              if (element) {
+                if (typeof element.click === 'function') {
+                  element.click();
+                } else if (element.parentElement && typeof element.parentElement.click === 'function') {
+                  element.parentElement.click();
+                }
+              }
+            }, selector).catch(() => {});
             
             clicked = true;
             break;
           }
         } catch (e) {
-          console.error(`[Playwright] Error clicking ${selector}:`, e);
+          // Silent error for individual selectors
         }
       }
 
