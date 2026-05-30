@@ -2,17 +2,17 @@
   "name": "kimiproxy",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/cli.js",
+  "bin": {
+    "kimiproxy": "./dist/cli.js"
+  },
   "scripts": {
-    "start": "npx tsx src/index.ts",
-    "start:firefox": "npx tsx src/index.ts --browser=firefox",
-    "start:chrome": "npx tsx src/index.ts --browser=chrome",
-    "start:edge": "npx tsx src/index.ts --browser=edge",
-    "login": "npx tsx src/login.ts",
-    "login:firefox": "npx tsx src/login.ts --browser=firefox",
-    "login:chrome": "npx tsx src/login.ts --browser=chrome",
-    "login:edge": "npx tsx src/login.ts --browser=edge",
-    "test": "tsx --test src/**/*.test.ts"
+    "build": "tsup src/cli.ts --format esm --clean --minify",
+    "start": "npx tsx src/cli.ts start",
+    "login": "npx tsx src/cli.ts login",
+    "config": "npx tsx src/cli.ts config",
+    "test": "tsx --test src/**/*.test.ts",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [],
   "author": "Henrique de Andrade Reynaud",
@@ -20,6 +20,7 @@
   "dependencies": {
     "@hono/node-server": "^2.0.2",
     "boxen": "^8.0.1",
+    "commander": "^15.0.0",
     "dotenv": "^17.4.2",
     "figlet": "^1.11.0",
     "hono": "^4.12.18",
@@ -32,6 +33,7 @@
     "@types/figlet": "^1.7.0",
     "@types/node": "^25.6.2",
     "@types/uuid": "^10.0.0",
+    "tsup": "^8.5.1",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3"
   },

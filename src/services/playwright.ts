@@ -10,6 +10,7 @@
 
 import { chromium, firefox, webkit, BrowserContext, Page } from 'playwright';
 import path from 'path';
+import { getProfilePath, loadConfig } from '../utils/config.ts';
 
 export type BrowserType = 'chromium' | 'firefox' | 'webkit' | 'chrome' | 'edge';
 
@@ -69,18 +70,20 @@ export async function getBasicHeaders(): Promise<{ cookie: string, userAgent: st
   return { cookie, userAgent, authorization };
 }
 
-export async function initPlaywright(headless = true, browserType: BrowserType = 'chromium') {
+export async function initPlaywright(headless = true, browserType?: BrowserType) {
   if (process.env.TEST_MOCK_PLAYWRIGHT) return;
   if (context) {
     return;
   }
 
-  const profilePath = path.resolve('kimi_profile');
+  const config = loadConfig();
+  const selectedBrowser = browserType || config.BROWSER || 'chromium';
+  const profilePath = getProfilePath();
   
   let browserEngine;
   let channel: string | undefined;
 
-  switch (browserType) {
+  switch (selectedBrowser) {
     case 'firefox':
       browserEngine = firefox;
       break;
@@ -101,17 +104,17 @@ export async function initPlaywright(headless = true, browserType: BrowserType =
       break;
   }
 
-  console.log(`[Playwright] Launching ${browserType}...`);
+  console.log(`[Playwright] Launching ${selectedBrowser}...`);
 
   const args: string[] = [];
   const ignoreDefaultArgs: string[] = [];
 
-  if (browserType === 'chromium' || browserType === 'chrome' || browserType === 'edge') {
+  if (selectedBrowser === 'chromium' || selectedBrowser === 'chrome' || selectedBrowser === 'edge') {
     args.push('--disable-blink-features=AutomationControlled');
     ignoreDefaultArgs.push('--enable-automation');
   }
 
-  const executablePath = process.env.EXECUTABLE_PATH;
+  const executablePath = config.EXECUTABLE_PATH;
 
   context = await browserEngine.launchPersistentContext(profilePath, {
     headless,

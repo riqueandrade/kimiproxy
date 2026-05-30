@@ -3,6 +3,7 @@ dist/
 kimi_profile/
 .env
 .env.local
+docs/
 *.log
 .DS_Store
 coverage/

@@ -3,7 +3,7 @@ import assert from 'node:assert';
 
 process.env.TEST_MOCK_PLAYWRIGHT = 'true';
 
-import { app } from '../index.ts';
+import { app } from '../app.ts';
 import { encodeConnectRequest } from '../services/kimi.ts';
 
 delete process.env.API_KEY;
