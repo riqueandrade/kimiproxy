@@ -64,15 +64,20 @@ export async function createKimiStream(
   modelId: string,
   forcedParentId?: string | null
 ): Promise<{ stream: ReadableStream, headers: Record<string, string>, uiSessionId: string }> {
+  // If forcedParentId is null, it's a new conversation, so we force a refresh of headers
   const { headers, chatSessionId, parentMessageId } = await getKimiHeaders(forcedParentId === null);
 
   let actualParentId: string | null = parentMessageId;
   let activeChatId = chatSessionId;
 
-  if (forcedParentId !== undefined) {
-    actualParentId = forcedParentId;
+  // New session logic: clean IDs to avoid conflicts
+  if (forcedParentId === null) {
+      activeChatId = "";
+      actualParentId = "";
+  } else if (forcedParentId !== undefined) {
+      actualParentId = forcedParentId;
   } else if (activeChatId && sessionStates[activeChatId] !== undefined) {
-    actualParentId = sessionStates[activeChatId];
+      actualParentId = sessionStates[activeChatId];
   }
 
   const modelConfig = getModelScenario(modelId);
@@ -97,9 +102,12 @@ export async function createKimiStream(
     }
   };
 
+  // Only send chat_id if we have one (not for new chats)
   if (activeChatId) {
     payload.chat_id = activeChatId;
   }
+
+  // console.log(`[Kimi API] Requesting ${modelId} - ChatID: ${activeChatId || 'NEW'} - Parent: ${actualParentId || 'ROOT'}`);
 
   // Active search tool
   //payload.tools = [{ type: 'TOOL_TYPE_SEARCH', search: {} }];

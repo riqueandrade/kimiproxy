@@ -39,7 +39,12 @@ class ConnectStreamParser {
       if (flags === 0x00) {
         const jsonStr = textDecoder.decode(payload);
         try {
-          messages.push(JSON.parse(jsonStr));
+          const msg = JSON.parse(jsonStr);
+          // DEBUG: Log unique and relevant parts of the Kimi message
+          if (msg.block?.text?.content || msg.block?.think?.content) {
+              console.log(`[Kimi Stream] Received content chunk...`);
+          }
+          messages.push(msg);
         } catch (e) {
           console.error("Failed to parse Connect JSON:", e, jsonStr);
         }
@@ -106,6 +111,10 @@ async function consumeKimiStream(
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
+
+    // DEBUG: Dump raw chunk to console to verify Kimi response
+    const hex = Buffer.from(value).toString('hex');
+    console.log(`[ConnectStreamParser] Received ${value.length} bytes. Hex: ${hex.slice(0, 30)}...`);
 
     const chunks = parser.feed(value);
     for (const msg of chunks) {
@@ -368,7 +377,7 @@ export async function chatCompletions(c: Context) {
       let textBuffer = '';
       let assistantMessageId = '';
       let textStreamBuffer = '';
-      const BUFFER_WINDOW = 200; // Hold back 200 chars to cover the pause message length
+      const BUFFER_WINDOW = 0; // No buffer for maximum responsiveness in CLI/Streaming
       let totalToolCallsEmitted = 0;
       let lastToolParserEmittedCount = 0;
 

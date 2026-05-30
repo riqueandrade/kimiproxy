@@ -10,9 +10,60 @@
 
 import { chromium, firefox, webkit, BrowserContext, Page } from 'playwright';
 import path from 'path';
-import { getProfilePath, loadConfig } from '../utils/config.ts';
+import fs from 'fs';
+import os from 'os';
+import { getProfilePath, loadConfig, saveConfig } from '../utils/config.ts';
+import pc from 'picocolors';
 
 export type BrowserType = 'chromium' | 'firefox' | 'webkit' | 'chrome' | 'edge';
+
+/**
+ * Common paths for browsers on different operating systems
+ */
+const BROWSER_PATHS: Record<string, string[]> = {
+  win32: [
+    // Brave
+    'C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe',
+    path.join(os.homedir(), 'AppData\\Local\\BraveSoftware\\Brave-Browser\\Application\\brave.exe'),
+    // Chrome
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    path.join(os.homedir(), 'AppData\\Local\\Google\\Chrome\\Application\\chrome.exe'),
+    // Edge
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  ],
+  darwin: [
+    '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  ],
+  linux: [
+    '/usr/bin/brave-browser',
+    '/usr/bin/google-chrome',
+    '/usr/bin/microsoft-edge',
+    '/usr/bin/chromium-browser',
+  ]
+};
+
+/**
+ * Automatically finds an installed browser on the system.
+ */
+export function discoverBrowser(): { path: string, type: BrowserType } | null {
+  const platform = os.platform();
+  const paths = BROWSER_PATHS[platform] || [];
+
+  for (const exePath of paths) {
+    if (fs.existsSync(exePath)) {
+      let type: BrowserType = 'chrome';
+      if (exePath.toLowerCase().includes('brave')) type = 'chrome'; // Playwright uses chrome channel for Brave
+      if (exePath.toLowerCase().includes('edge') || exePath.toLowerCase().includes('msedge')) type = 'edge';
+      
+      return { path: exePath, type };
+    }
+  }
+
+  return null;
+}
 
 let context: BrowserContext | null = null;
 export let activePage: Page | null = null;
@@ -77,9 +128,26 @@ export async function initPlaywright(headless = true, browserType?: BrowserType)
   }
 
   const config = loadConfig();
-  const selectedBrowser = browserType || config.BROWSER || 'chromium';
+  let selectedBrowser = browserType || config.BROWSER || 'chromium';
+  let executablePath = config.EXECUTABLE_PATH;
   const profilePath = getProfilePath();
   
+  // Auto-discovery logic for better UX
+  if (selectedBrowser === 'chromium' && !executablePath) {
+    const discovery = discoverBrowser();
+    if (discovery) {
+      console.log(`[Playwright] Auto-discovered browser: ${discovery.path}`);
+      executablePath = discovery.path;
+      selectedBrowser = discovery.type;
+
+      // Save discovered settings to global config for next time
+      saveConfig({
+        BROWSER: selectedBrowser,
+        EXECUTABLE_PATH: executablePath
+      });
+    }
+  }
+
   let browserEngine;
   let channel: string | undefined;
 
@@ -114,16 +182,26 @@ export async function initPlaywright(headless = true, browserType?: BrowserType)
     ignoreDefaultArgs.push('--enable-automation');
   }
 
-  const executablePath = config.EXECUTABLE_PATH;
-
-  context = await browserEngine.launchPersistentContext(profilePath, {
-    headless,
-    channel,
-    executablePath,
-    args,
-    ignoreDefaultArgs,
-    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-  });
+  try {
+    context = await browserEngine.launchPersistentContext(profilePath, {
+      headless,
+      channel,
+      executablePath,
+      args,
+      ignoreDefaultArgs,
+      userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+    });
+  } catch (err: any) {
+    if (err.message.includes('Executable doesn\'t exist') && !executablePath) {
+      console.log(pc.yellow('\n[Playwright] Default browser not found. Attempting emergency discovery...'));
+      const emergency = discoverBrowser();
+      if (emergency) {
+        console.log(pc.green(`[Playwright] Found ${emergency.path}! Recovering...`));
+        return initPlaywright(headless, emergency.type);
+      }
+    }
+    throw err;
+  }
 
   // Hide webdriver property from navigator
   await context.addInitScript(() => {
@@ -189,16 +267,8 @@ async function _getKimiHeadersInternal(forceNew = false): Promise<{ headers: Rec
 
   if (!isOnKimi || forceNew) {
     console.log(`[Playwright] Navigating to Kimi home... (Current: ${currentUrl})`);
-    await activePage.goto('https://www.kimi.com/', { waitUntil: 'domcontentloaded' });
+    await activePage.goto('https://www.kimi.com/', { waitUntil: 'networkidle' });
   }
-
-  // Wait for the textarea
-  console.log('[Playwright] Waiting for chat input...');
-  const inputSelector = 'textarea:visible, [contenteditable="true"]:visible, div[contenteditable="true"]';
-  await activePage.waitForSelector(inputSelector, { timeout: 30000 }).catch(() => {
-    console.error('[Playwright] Chat input not found. Current URL:', activePage!.url());
-    throw new Error('Timeout waiting for chat input. Are you logged in?');
-  });
 
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -206,124 +276,68 @@ async function _getKimiHeadersInternal(forceNew = false): Promise<{ headers: Rec
       reject(new Error('Timeout waiting for Kimi headers'));
     }, 60000);
 
-    console.log('[Playwright] Setting up route interception...');
+    console.log('[Playwright] Capturing headers from background traffic...');
     const routeHandler = async (route: any, request: any) => {
-      clearTimeout(timeout);
-      
       const reqHeaders = request.headers();
-      let uiSessionId = '';
-      let uiParentMessageId: string | null = null;
-
-      const postData = request.postData();
-      if (postData) {
-        try {
-          const jsonStart = postData.indexOf('{');
-          if (jsonStart !== -1) {
-            const payload = JSON.parse(postData.slice(jsonStart));
-            if (payload.chat_id) {
-              uiSessionId = payload.chat_id;
-            }
-            if (payload.message && payload.message.parent_id) {
-              uiParentMessageId = payload.message.parent_id;
-            }
-          }
-        } catch (e) {
-          // ignore parsing error
-        }
-      }
-
-      const extractedHeaders = {
-        'cookie': reqHeaders['cookie'] || '',
-        'authorization': reqHeaders['authorization'] || '',
-        'connect-protocol-version': reqHeaders['connect-protocol-version'] || '1',
-        'x-msh-device-id': reqHeaders['x-msh-device-id'] || '',
-        'x-msh-platform': reqHeaders['x-msh-platform'] || 'web',
-        'x-msh-session-id': reqHeaders['x-msh-session-id'] || '',
-        'x-msh-version': reqHeaders['x-msh-version'] || '1.0.0',
-        'x-traffic-id': reqHeaders['x-traffic-id'] || '',
-        'r-timezone': reqHeaders['r-timezone'] || 'America/Maceio',
-        'user-agent': reqHeaders['user-agent'] || '',
-        'origin': 'https://www.kimi.com',
-        'referer': 'https://www.kimi.com/'
-      };
-
-      // Ensure we have cookie and authorization (critical)
-      if (!extractedHeaders.cookie || !extractedHeaders.authorization) {
-        console.log('[Playwright] Intercepted request missing critical headers, skipping...');
-        await route.continue();
-        return;
-      }
-
-      console.log('[Playwright] Successfully intercepted Kimi headers.');
-      currentHeaders = extractedHeaders;
-      cachedKimiHeaders = { headers: extractedHeaders, chatSessionId: uiSessionId, parentMessageId: uiParentMessageId };
-      lastHeadersTime = Date.now();
-
-      // Abort to prevent polluting chat history
-      await route.abort('aborted');
+      const url = request.url();
       
-      // Cleanup route
-      await activePage!.unroute('**/apiv2/kimi.gateway.chat.v1.ChatService/Chat*', routeHandler);
+      // CRITICAL FILTER: Only capture from real API calls, ignore telemetry/analytics
+      const isApiCall = url.includes('/apiv2/') && !url.includes('telemetry') && !url.includes('log');
+      const hasAuth = !!reqHeaders['authorization'] && reqHeaders['authorization'].length > 20;
+      const hasSession = !!reqHeaders['x-msh-session-id'];
 
-      resolve(cachedKimiHeaders);
+      if (isApiCall && hasAuth && hasSession) {
+        clearTimeout(timeout);
+
+        let uiSessionId = '';
+        let uiParentMessageId: string | null = null;
+
+        // Try to extract session info if this is a Chat request
+        if (url.includes('/Chat')) {
+            const postData = request.postData();
+            if (postData) {
+                try {
+                    const jsonStart = postData.indexOf('{');
+                    if (jsonStart !== -1) {
+                        const payload = JSON.parse(postData.slice(jsonStart));
+                        if (payload.chat_id) uiSessionId = payload.chat_id;
+                        if (payload.message?.parent_id) uiParentMessageId = payload.message.parent_id;
+                    }
+                } catch (e) {}
+            }
+        }
+
+        const extractedHeaders = {
+          'cookie': reqHeaders['cookie'] || '',
+          'authorization': reqHeaders['authorization'] || '',
+          'connect-protocol-version': reqHeaders['connect-protocol-version'] || '1',
+          'x-msh-device-id': reqHeaders['x-msh-device-id'] || '',
+          'x-msh-platform': reqHeaders['x-msh-platform'] || 'web',
+          'x-msh-session-id': reqHeaders['x-msh-session-id'] || '',
+          'x-msh-version': reqHeaders['x-msh-version'] || '1.0.0',
+          'x-traffic-id': reqHeaders['x-traffic-id'] || '',
+          'r-timezone': reqHeaders['r-timezone'] || 'America/Maceio',
+          'user-agent': reqHeaders['user-agent'] || '',
+          'origin': 'https://www.kimi.com',
+          'referer': 'https://www.kimi.com/'
+        };
+
+        console.log(`[Playwright] Captured valid headers from: ${url.split('/').pop()}`);
+        currentHeaders = extractedHeaders;
+        cachedKimiHeaders = { headers: extractedHeaders, chatSessionId: uiSessionId, parentMessageId: uiParentMessageId };
+        lastHeadersTime = Date.now();
+
+        await activePage!.unroute('**/apiv2/**', routeHandler).catch(() => {});
+        await route.continue().catch(() => {});
+        resolve(cachedKimiHeaders);
+      } else {
+        await route.continue().catch(() => {});
+      }
     };
 
-    activePage!.route('**/apiv2/kimi.gateway.chat.v1.ChatService/Chat*', routeHandler).then(async () => {
-      console.log('[Playwright] Triggering request...');
-      const inputSelector = 'textarea:visible, [contenteditable="true"]:visible, div[contenteditable="true"]';
-      
-      // We use type instead of fill to trigger all events
-      await activePage!.focus(inputSelector);
-      await activePage!.fill(inputSelector, ''); // clear first
-      await activePage!.type(inputSelector, 'a', { delay: 100 });
-      console.log('[Playwright] Typed char, waiting for UI to update...');
-      await sleep(2000); // Wait more for Send button to enable
-      
-      // Improved Send Button detection & aggressive clicking
-      const selectors = [
-        'button[type="submit"]',
-        'button.send-button',
-        '.chat-input-send-button',
-        'button:has(svg.send-icon)',
-        'svg.send-icon',
-        'button:has(svg)'
-      ];
-      
-      let clicked = false;
-      for (const selector of selectors) {
-        try {
-          const btn = await activePage!.$(selector);
-          if (btn && await btn.isVisible()) {
-            console.log(`[Playwright] Attempting click on: ${selector}`);
-            
-            // Try Playwright click first as it's more robust with elements like SVG
-            await btn.click({ force: true, timeout: 2000 }).catch(() => {});
-            
-            // Fallback to DOM click if needed, with safety check
-            await activePage!.evaluate((sel) => {
-              const element = document.querySelector(sel) as any;
-              if (element) {
-                if (typeof element.click === 'function') {
-                  element.click();
-                } else if (element.parentElement && typeof element.parentElement.click === 'function') {
-                  element.parentElement.click();
-                }
-              }
-            }, selector).catch(() => {});
-            
-            clicked = true;
-            break;
-          }
-        } catch (e) {
-          // Silent error for individual selectors
-        }
-      }
-
-      if (!clicked) {
-        console.log('[Playwright] No send button found/clicked, fallback to Enter...');
-        await activePage!.focus(inputSelector);
-        await activePage!.keyboard.press('Enter');
-      }
+    activePage!.route('**/apiv2/**', routeHandler).then(async () => {
+      // If we don't have headers yet, refresh or navigate to trigger traffic
+      await activePage!.reload({ waitUntil: 'domcontentloaded' });
     });
   });
 }

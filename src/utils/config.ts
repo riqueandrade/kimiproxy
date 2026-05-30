@@ -15,6 +15,7 @@ export interface AppConfig {
   PORT: number;
   API_KEY: string;
   BROWSER: 'chromium' | 'firefox' | 'webkit' | 'chrome' | 'edge';
+  LANGUAGE: 'en' | 'pt-br';
   EXECUTABLE_PATH?: string;
 }
 
@@ -22,6 +23,7 @@ const DEFAULT_CONFIG: AppConfig = {
   PORT: 3000,
   API_KEY: 'sk-kimiproxy',
   BROWSER: 'chromium',
+  LANGUAGE: 'en',
 };
 
 /**
@@ -54,6 +56,7 @@ export function loadConfig(): AppConfig {
     PORT: process.env.PORT ? parseInt(process.env.PORT) : DEFAULT_CONFIG.PORT,
     API_KEY: process.env.API_KEY || DEFAULT_CONFIG.API_KEY,
     BROWSER: (process.env.BROWSER as any) || DEFAULT_CONFIG.BROWSER,
+    LANGUAGE: (process.env.LANGUAGE as any) || DEFAULT_CONFIG.LANGUAGE,
     EXECUTABLE_PATH: process.env.EXECUTABLE_PATH,
   };
 }
